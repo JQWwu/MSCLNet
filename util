@@ -51,49 +51,6 @@ class AveragePrecisionMeter(object):
         self.scores.narrow(0, offset, output.size(0)).copy_(output)
         self.targets.narrow(0, offset, target.size(0)).copy_(target)
 
-    def value(self):
-        if self.scores.numel() == 0:
-            return 0
-        ap = torch.zeros(self.scores.size(1))
-        rg = torch.arange(1, self.scores.size(0)).float()
-        # compute average precision for each class
-        for k in range(self.scores.size(1)):
-            # sort scores
-            scores = self.scores[:, k]
-            targets = self.targets[:, k]
-            # compute average precision
-            ap[k] = AveragePrecisionMeter.average_precision(scores, targets, self.difficult_examples)
-        return ap
-
-    def average_precision(output, target, difficult_examples=True):
-
-        # sort examples
-        sorted, indices = torch.sort(output, dim=0, descending=True)
-
-        # Computes prec@i
-        pos_count = 0.
-        total_count = 0.
-        precision_at_i = 0.
-        for i in indices:
-            label = target[i]
-            if difficult_examples and label == 0:
-                continue
-            if label == 1:
-                pos_count += 1
-            total_count += 1
-            if label == 1:
-                precision_at_i += pos_count / total_count
-        precision_at_i /= pos_count
-        return precision_at_i
-
-    def overall(self):
-        if self.scores.numel() == 0:
-            return 0, 0, 0, 0, 0, 0  # Adjust to match the number of values returned
-
-        scores = self.scores.cpu().numpy()
-        targets = self.targets.cpu().numpy()
-        targets[targets == -1] = 0
-        return self.evaluation(scores, targets)[:6]  # Return only the first 6 values
 
     def get_classwise_metrics(self):
         if self.scores.numel() == 0:
@@ -104,21 +61,9 @@ class AveragePrecisionMeter(object):
         targets[targets == -1] = 0
 
         # 调用 evaluation 方法获取指标
-        _, _, _, _, _, _, TP, TN, FP, FN = self.evaluation(scores, targets)
+        TP, TN, FP, FN = self.evaluation(scores, targets)
 
         return TP, TN, FP, FN
-
-    def overall_topk(self, k):
-        targets = self.targets.cpu().numpy()
-        targets[targets == -1] = 0
-        n, c = self.scores.size()
-        scores = np.zeros((n, c)) - 1
-        index = self.scores.topk(k, 1, True, True)[1].cpu().numpy()
-        tmp = self.scores.cpu().numpy()
-        for i in range(n):
-            for ind in index[i]:
-                scores[i, ind] = 1 if tmp[i, ind] >= 0 else -1
-        return self.evaluation(scores, targets)[:6]
 
 
     def evaluation(self, scores_, targets_):
@@ -136,17 +81,9 @@ class AveragePrecisionMeter(object):
             TP[k] = Nc[k]
             FP[k] = Np[k] - TP[k]
             FN[k] = Ng[k] - TP[k]
-  
-            TN[k] = n - TP[k] - FP[k] - FN[k]
-        Np[Np == 0] = 1
-        OP = np.sum(Nc) / np.sum(Np)
-        OR = np.sum(Nc) / np.sum(Ng)
-        OF1 = (2 * OP * OR) / (OP + OR)
 
-        CP = np.sum(Nc / Np) / n_class
-        CR = np.sum(Nc / Ng) / n_class
-        CF1 = (2 * CP * CR) / (CP + CR)
-        return OP, OR, OF1, CP, CR, CF1,TP, TN, FP, FN
+            TN[k] = n - TP[k] - FP[k] - FN[k]
+        return TP, TN, FP, FN
 
 def gen_A(num_classes, t, adj_file):
     import pickle
